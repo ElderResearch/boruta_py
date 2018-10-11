@@ -13,6 +13,9 @@ import numpy as np
 import scipy as sp
 from sklearn.utils import check_random_state, check_X_y
 from sklearn.base import TransformerMixin, BaseEstimator
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
 
 
 class BorutaPy(BaseEstimator, TransformerMixin):
@@ -349,6 +352,9 @@ class BorutaPy(BaseEstimator, TransformerMixin):
                 ranks = ranks - np.min(ranks) + 2
             self.ranking_[not_selected] = ranks
 
+        # save imp history for plotting purposes
+        self._imp_history = imp_history
+
         # notify user
         if self.verbose > 0:
             self._print_results(dec_reg, _iter, 1)
@@ -542,3 +548,17 @@ class BorutaPy(BaseEstimator, TransformerMixin):
             result = '\n'.join([x[0] + '\t' + x[1] for x in zip(cols, content)])
             output = "\n\nBorutaPy finished running.\n\n" + result
         print(output)
+
+    def plot_importances(self, feature_names):
+        imps = pd.DataFrame(self._imp_history, columns=feature_names)
+        imps = imps.reindex(imps.mean().sort_values().index, axis=1)
+        imps = imps.iloc[1:]  # first row is all zeroes
+        dims = (9, 6)
+        fig, ax = plt.subplots(figsize=dims)
+        plt.xlabel('Features', fontsize=14)
+        plt.ylabel('Importance', fontsize=14)
+        plt.title("Boruta Feature Importances", fontsize=16)
+        fig = sns.boxplot(data=imps, orient='v', ax=ax, palette='viridis')
+        fig.set_xticklabels(fig.get_xticklabels(), rotation='vertical')
+        sns.despine()
+        return fig
