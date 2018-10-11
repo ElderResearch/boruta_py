@@ -1,3 +1,5 @@
+This is a modified version of `boruta_py`. The original repository appears to be abandoned, so we've forked it, fixed a couple of warnings/errors, and added plotting functionality analagous to R's `Boruta` library.
+
 # boruta_py #
 
 This project hosts Python implementations of the [Boruta all-relevant feature selection method](https://m2.icm.edu.pl/boruta/).
