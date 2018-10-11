@@ -159,7 +159,8 @@ __verbose__ : int, default=0
     
     # load X and y
     # NOTE BorutaPy accepts numpy arrays only, hence the .values attribute
-    X = pd.read_csv('examples/test_X.csv', index_col=0).values
+    X_df = pd.read_csv('examples/test_X.csv', index_col=0)
+    X = X_df.values
     y = pd.read_csv('examples/test_y.csv', header=None, index_col=0).values
     y = y.ravel()
     
@@ -181,6 +182,11 @@ __verbose__ : int, default=0
     
     # call transform() on X to filter it down to selected features
     X_filtered = feat_selector.transform(X)
+    
+    # plot the feature importances
+    feat_selector.plot_importances(X_df.columns)
+    
+
 
 ## References ##
 
