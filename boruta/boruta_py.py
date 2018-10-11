@@ -137,33 +137,33 @@ class BorutaPy(BaseEstimator, TransformerMixin):
 
     Examples
     --------
-    
+
     import pandas as pd
     from sklearn.ensemble import RandomForestClassifier
     from boruta import BorutaPy
-    
+
     # load X and y
     # NOTE BorutaPy accepts numpy arrays only, hence the .values attribute
     X = pd.read_csv('examples/test_X.csv', index_col=0).values
     y = pd.read_csv('examples/test_y.csv', header=None, index_col=0).values
     y = y.ravel()
-    
+
     # define random forest classifier, with utilising all cores and
     # sampling in proportion to y labels
     rf = RandomForestClassifier(n_jobs=-1, class_weight='balanced', max_depth=5)
-    
+
     # define Boruta feature selection method
     feat_selector = BorutaPy(rf, n_estimators='auto', verbose=2, random_state=1)
-    
+
     # find all relevant features - 5 features should be selected
     feat_selector.fit(X, y)
-    
+
     # check selected features - first 5 features are selected
     feat_selector.support_
-    
+
     # check ranking of features
     feat_selector.ranking_
-    
+
     # call transform() on X to filter it down to selected features
     X_filtered = feat_selector.transform(X)
 
@@ -415,7 +415,8 @@ class BorutaPy(BaseEstimator, TransformerMixin):
 
     def _assign_hits(self, hit_reg, cur_imp, imp_sha_max):
         # register hits for features that did better than the best of shadows
-        cur_imp_no_nan = [val for val in cur_imp[0] if not np.isnan(val)]
+        cur_imp_no_nan = cur_imp[0]
+        cur_imp_no_nan[np.isnan(cur_imp_no_nan)] = 0
         hits = np.where(cur_imp_no_nan > imp_sha_max)[0]
         hit_reg[hits] += 1
         return hit_reg
