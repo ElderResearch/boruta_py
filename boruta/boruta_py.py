@@ -331,24 +331,23 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         not_selected = np.setdiff1d(np.arange(n_feat), selected)
         # large importance values should rank higher = lower ranks -> *(-1)
         imp_history_rejected = imp_history[1:, not_selected] * -1
+        # calculate ranks in each iteration, then median of ranks across feats
+        if imp_history_rejected.size == 0:
+            ranks = np.ones(n_feat)
+        else:
+            iter_ranks = self._nanrankdata(imp_history_rejected, axis=1)
+            rank_medians = np.nanmedian(iter_ranks, axis=0)
+            ranks = self._nanrankdata(rank_medians, axis=0)
 
         # update rank for not_selected features
         if not_selected.shape[0] > 0:
-                # calculate ranks in each iteration, then median of ranks across feats
-                iter_ranks = self._nanrankdata(imp_history_rejected, axis=1)
-                rank_medians = np.nanmedian(iter_ranks, axis=0)
-                ranks = self._nanrankdata(rank_medians, axis=0)
-
-                # set smallest rank to 3 if there are tentative feats
-                if tentative.shape[0] > 0:
-                    ranks = ranks - np.min(ranks) + 3
-                else:
-                    # and 2 otherwise
-                    ranks = ranks - np.min(ranks) + 2
-                self.ranking_[not_selected] = ranks
-        else:
-            # all are selected, thus we set feature supports to True
-            self.support_ = np.ones(n_feat, dtype=np.bool)
+            # set smallest rank to 3 if there are tentative feats
+            if tentative.shape[0] > 0:
+                ranks = ranks - np.min(ranks) + 3
+            else:
+                # and 2 otherwise
+                ranks = ranks - np.min(ranks) + 2
+            self.ranking_[not_selected] = ranks
 
         # notify user
         if self.verbose > 0:
