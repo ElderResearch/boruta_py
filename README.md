@@ -1,5 +1,9 @@
 This is a modified version of `boruta_py`. The original repository appears to be abandoned, so we've forked it, fixed a couple of warnings/errors, and added plotting functionality analagous to R's `Boruta` library.
 
+You can install via `pip`:
+
+`pip install -U git+https://github.com/ElderResearch/boruta_py`
+
 # boruta_py #
 
 This project hosts Python implementations of the [Boruta all-relevant feature selection method](https://m2.icm.edu.pl/boruta/).
