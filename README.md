@@ -187,7 +187,6 @@ __verbose__ : int, default=0
     
     # plot the feature importances
     feat_selector.plot_importances(X_df.columns)
-![Feature Importances Plot](./boruta/examples/example_plot.png)
 
 
 ## References ##
