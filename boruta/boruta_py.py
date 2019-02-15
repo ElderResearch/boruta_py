@@ -549,20 +549,23 @@ class BorutaPy(BaseEstimator, TransformerMixin):
             output = "\n\nBorutaPy finished running.\n\n" + result
         print(output)
 
+
     def plot_importances(self, feature_names):
         imps = self.get_historical_importances(feature_names)
         dims = (9, 6)
         fig, ax = plt.subplots(figsize=dims)
         plt.xlabel('Features', fontsize=14)
-        plt.ylabel('Importance', fontsize=14)
+        plt.ylabel('Importance (Relevance)', fontsize=14)
         plt.title("Boruta Feature Importances", fontsize=16)
+        plt.xticks(fontsize=12)
         fig = sns.boxplot(data=imps, orient='v', ax=ax, palette='viridis')
         fig.set_xticklabels(fig.get_xticklabels(), rotation='vertical')
         sns.despine()
         return fig
 
+
     def get_historical_importances(self, feature_names):
         imps = pd.DataFrame(self._imp_history, columns=feature_names)
-        imps = imps.reindex(imps.mean().sort_values().index, axis=1)
+        imps = imps.reindex(columns=[imps.mean().sort_values().index])
         imps = imps.iloc[1:]  # first row is all zeroes
         return imps
