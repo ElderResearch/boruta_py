@@ -549,7 +549,6 @@ class BorutaPy(BaseEstimator, TransformerMixin):
             output = "\n\nBorutaPy finished running.\n\n" + result
         print(output)
 
-
     def plot_importances(self, feature_names):
         imps = self.get_historical_importances(feature_names)
         dims = (9, 6)
@@ -562,7 +561,6 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         fig.set_xticklabels(fig.get_xticklabels(), rotation='vertical')
         sns.despine()
         return fig
-
 
     def get_historical_importances(self, feature_names):
         imps = pd.DataFrame(self._imp_history, columns=feature_names)
