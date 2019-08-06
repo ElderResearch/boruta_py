@@ -566,6 +566,6 @@ class BorutaPy(BaseEstimator, TransformerMixin):
 
     def get_historical_importances(self, feature_names):
         imps = pd.DataFrame(self._imp_history, columns=feature_names)
-        imps = imps.reindex(columns=[imps.mean().sort_values().index])
+        imps = imps.reindex(columns=imps.mean().sort_values().index)
         imps = imps.iloc[1:]  # first row is all zeroes
         return imps
