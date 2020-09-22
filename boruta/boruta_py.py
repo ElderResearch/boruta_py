@@ -405,7 +405,7 @@ class BorutaPy(BaseEstimator, TransformerMixin):
                 raise ValueError('Only methods with feature_importance_ attribute '
                                 'are currently supported in BorutaPy.')
         elif self.importance_type == 'permutation':
-            imp = rfpimp.oob_importances(self.estimator, pd.DataFrame(X), pd.Series(y))
+            imp = rfpimp.oob_importances(self.estimator, pd.DataFrame(X), pd.Series(y)).values.flatten()
         return imp
 
     def _get_shuffle(self, seq):
