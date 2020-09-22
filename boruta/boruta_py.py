@@ -16,6 +16,7 @@ from sklearn.base import TransformerMixin, BaseEstimator
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
+import rfpimp
 
 
 class BorutaPy(BaseEstimator, TransformerMixin):
@@ -178,7 +179,7 @@ class BorutaPy(BaseEstimator, TransformerMixin):
     """
 
     def __init__(self, estimator, n_estimators=1000, perc=100, alpha=0.05,
-                 two_step=True, max_iter=100, random_state=None, verbose=0):
+                 two_step=True, max_iter=100, random_state=None, verbose=0, importance_type='auto'):
         self.estimator = estimator
         self.n_estimators = n_estimators
         self.perc = perc
@@ -187,6 +188,7 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         self.max_iter = max_iter
         self.random_state = random_state
         self.verbose = verbose
+        self.importance_type = importance_type
 
     def fit(self, X, y):
         """
@@ -390,11 +392,14 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         except Exception as e:
             raise ValueError('Please check your X and y variable. The provided'
                              'estimator cannot be fitted to your data.\n' + str(e))
-        try:
-            imp = self.estimator.feature_importances_
-        except Exception:
-            raise ValueError('Only methods with feature_importance_ attribute '
-                             'are currently supported in BorutaPy.')
+        if self.importance_type == 'auto':
+            try:
+                imp = self.estimator.feature_importances_
+            except Exception:
+                raise ValueError('Only methods with feature_importance_ attribute '
+                                'are currently supported in BorutaPy.')
+        elif self.importance_type == 'permutation':
+            imp = rfpimp.oob_importances(self.estimator, pd.DataFrame(X), pd.Series(y))
         return imp
 
     def _get_shuffle(self, seq):
@@ -525,6 +530,9 @@ class BorutaPy(BaseEstimator, TransformerMixin):
 
         if self.alpha <= 0 or self.alpha > 1:
             raise ValueError('Alpha should be between 0 and 1.')
+
+        if self.importance_type not in ['auto', 'permutation']:
+            raise ValueError('importance_type should be "auto" or "permutation"')
 
     def _print_results(self, dec_reg, _iter, flag):
         n_iter = str(_iter) + ' / ' + str(self.max_iter)
