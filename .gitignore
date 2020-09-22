@@ -1,3 +1,9 @@
+.ipynb_checkpoints
+.vscode
+*.egg-info
+*.ipynb
+__pycache__
+
 # General
 .DS_Store
 .AppleDouble
