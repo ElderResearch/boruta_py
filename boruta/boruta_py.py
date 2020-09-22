@@ -16,7 +16,7 @@ from sklearn.base import TransformerMixin, BaseEstimator
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
-import rfpimp
+import rfpimp_local
 
 
 class BorutaPy(BaseEstimator, TransformerMixin):
@@ -405,7 +405,7 @@ class BorutaPy(BaseEstimator, TransformerMixin):
                 raise ValueError('Only methods with feature_importance_ attribute '
                                 'are currently supported in BorutaPy.')
         elif self.importance_type == 'permutation':
-            imp = rfpimp.oob_importances(self.estimator, pd.DataFrame(X), pd.Series(y)).values.flatten()
+            imp = rfpimp_local.oob_importances(self.estimator, pd.DataFrame(X), pd.Series(y)).values.flatten()
         return imp
 
     def _get_shuffle(self, seq):

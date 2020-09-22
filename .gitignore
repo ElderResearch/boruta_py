@@ -3,6 +3,7 @@
 *.egg-info
 *.ipynb
 __pycache__
+temp
 
 # General
 .DS_Store
