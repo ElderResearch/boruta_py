@@ -13,10 +13,15 @@ import numpy as np
 import scipy as sp
 from sklearn.utils import check_random_state, check_X_y
 from sklearn.base import TransformerMixin, BaseEstimator
+from sklearn.model_selection import train_test_split
+from sklearn.inspection import permutation_importance
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble.forest import _get_n_samples_bootstrap, _generate_unsampled_indices
+import sklearn
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
-import rfpimp_local
+from distutils.version import LooseVersion
 
 
 class BorutaPy(BaseEstimator, TransformerMixin):
@@ -178,8 +183,8 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         Journal of Statistical Software, Vol. 36, Issue 11, Sep 2010
     """
 
-    def __init__(self, estimator, n_estimators=1000, perc=100, alpha=0.05,
-                 two_step=True, max_iter=100, random_state=None, verbose=0, importance_type='auto'):
+    def __init__(self, estimator, n_estimators=100, perc=100, alpha=0.05, two_step=True, 
+    max_iter=100, random_state=None, verbose=0, importance_type='auto'):
         self.estimator = estimator
         self.n_estimators = n_estimators
         self.perc = perc
@@ -392,9 +397,76 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         n_estimators = int(multi * f_repr)
         return n_estimators
 
+    def permutation_importances_raw(self, X_train, y_train):
+        """
+        Taken from rfpimp module to decouple dependency and modify
+        <https://github.com/parrt/random-forest-importances>
+        ---------------------------------------------------------------
+        Return array of importances from pre-fit rf; metric is function
+        that measures accuracy or R^2 or similar. This function
+        works for regressors and classifiers.
+        """
+        baseline = self.oob_classifier_accuracy(X_train, y_train)
+        imp = []
+        for col in range(X_train.shape[1]):
+            save = X_train[:, col].copy()
+            X_train[:, col] = np.random.permutation(X_train[:, col])
+            m = self.oob_classifier_accuracy(X_train, y_train)
+            X_train[:, col] = save
+            drop_in_metric = baseline - m
+            imp.append(drop_in_metric)
+        return np.array(imp)
+
+
+    def _get_unsampled_indices(self, tree, n_samples):
+        """
+        Taken from rfpimp module to decouple dependency and modify
+        <https://github.com/parrt/random-forest-importances>
+        ---------------------------------------------------------------
+        An interface to get unsampled indices regardless of sklearn version.
+        """
+        if LooseVersion(sklearn.__version__) >= LooseVersion("0.22"):
+            # Version 0.22 or newer uses 3 arguments.
+            n_samples_bootstrap = _get_n_samples_bootstrap(n_samples, n_samples)
+            return _generate_unsampled_indices(tree.random_state, n_samples, n_samples_bootstrap)
+        else:
+            # Version 0.21 or older uses only two arguments.
+            return _generate_unsampled_indices(tree.random_state, n_samples)
+
+
+    def oob_classifier_accuracy(self, X, y):
+        """
+        Taken from rfpimp module to decouple dependency and modify
+        <https://github.com/parrt/random-forest-importances>
+        ---------------------------------------------------------------
+        Compute out-of-bag (OOB) accuracy for a scikit-learn random forest
+        classifier. We learned the guts of scikit's RF from the BSD licensed
+        code:
+        https://github.com/scikit-learn/scikit-learn/blob/a24c8b46/sklearn/ensemble/forest.py#L425
+        """
+
+        n_samples = len(X)
+        n_classes = len(np.unique(y))
+        predictions = np.zeros((n_samples, n_classes))
+        for tree in self.estimator.estimators_:
+            unsampled_indices = self._get_unsampled_indices(tree, n_samples)
+            tree_preds = tree.predict_proba(X[unsampled_indices, :])
+            predictions[unsampled_indices] += tree_preds
+
+        predicted_class_indexes = np.argmax(predictions, axis=1)
+        predicted_classes = [self.estimator.classes_[i] for i in predicted_class_indexes]
+
+        oob_score = np.mean(y == predicted_classes)
+        return oob_score
+
+
     def _get_imp(self, X, y):
+        if self.importance_type == 'permutation_holdout':
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
+        else:
+            X_train, y_train = X.copy(), y.copy()
         try:
-            self.estimator.fit(X, y)
+            self.estimator.fit(X_train, y_train)
         except Exception as e:
             raise ValueError('Please check your X and y variable. The provided'
                              'estimator cannot be fitted to your data.\n' + str(e))
@@ -405,7 +477,11 @@ class BorutaPy(BaseEstimator, TransformerMixin):
                 raise ValueError('Only methods with feature_importance_ attribute '
                                 'are currently supported in BorutaPy.')
         elif self.importance_type == 'permutation':
-            imp = rfpimp_local.oob_importances(self.estimator, pd.DataFrame(X), pd.Series(y)).values.flatten()
+            imp = self.permutation_importances_raw(X, y)
+        elif self.importance_type == 'permutation_holdout':
+            imp = permutation_importance(self.estimator, X_test, y_test, n_repeats=5, n_jobs=-1)['importances_mean']
+        else:
+            raise ValueError('importance_type should be "auto", "permutation", or "permutation_holdout"')
         return imp
 
     def _get_shuffle(self, seq):
@@ -536,9 +612,6 @@ class BorutaPy(BaseEstimator, TransformerMixin):
 
         if self.alpha <= 0 or self.alpha > 1:
             raise ValueError('Alpha should be between 0 and 1.')
-
-        if self.importance_type not in ['auto', 'permutation']:
-            raise ValueError('importance_type should be "auto" or "permutation"')
 
     def _print_results(self, dec_reg, _iter, flag):
         n_iter = str(_iter) + ' / ' + str(self.max_iter)
