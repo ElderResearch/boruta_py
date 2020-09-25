@@ -85,7 +85,7 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         feature_importances_ attribute. Important features must correspond to
         high absolute values in the feature_importances_.
 
-    n_estimators : int or string, default = 1000
+    n_estimators : int or string, default = 100
         If int sets the number of estimators in the chosen ensemble method.
         If 'auto' this is determined automatically based on the size of the
         dataset. The other parameters of the used estimators need to be set
@@ -121,6 +121,24 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         - 0: no output
         - 1: displays iteration number
         - 2: which features have been selected already
+    
+    importance_type : str, default = 'auto'
+        Should be one of auto, permutation_oob, permutation_holdout, permutation_bytree.
+        auto uses the default estimator feature_importances_ attribute;
+        permutation_oob uses permutation importance based on oob_accuracy as 
+        implemented in the rfpimp module;
+        permutation_holdout uses permutation importance based on holdout accuracy
+        by splitting the dataset in two;
+        permutation_bytree uses permutation importance for each tree individually
+        and averages the results. I believe this is what is implemented in the 
+        R ranger package according to: 
+        <https://github.com/imbs-hl/ranger/issues/237#issuecomment-344717299>
+    
+    scale_permutation_bytree : bool, default = False
+        Whether or not to scale permutation importance by standard error.
+        This is only relevant when importance_type = permutation_bytree.
+        The R Boruta function scales, but by default it's set to False
+        in ranger. The literature indicates scaling biases the results.
 
     Attributes
     ----------
@@ -184,7 +202,7 @@ class BorutaPy(BaseEstimator, TransformerMixin):
     """
 
     def __init__(self, estimator, n_estimators=100, perc=100, alpha=0.05, two_step=True, 
-    max_iter=100, random_state=None, verbose=0, importance_type='auto'):
+    max_iter=100, random_state=None, verbose=0, importance_type='gini', scale_permutation_bytree=False):
         self.estimator = estimator
         self.n_estimators = n_estimators
         self.perc = perc
@@ -193,7 +211,8 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         self.max_iter = max_iter
         self.random_state = random_state
         self.verbose = verbose
-        self.importance_type = importance_type
+        self.importance_type = importance_type,
+        self.scale_permutation_bytree = scale_permutation_bytree
 
     def fit(self, X, y):
         """
@@ -397,14 +416,75 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         n_estimators = int(multi * f_repr)
         return n_estimators
 
-    def permutation_importances_raw(self, X_train, y_train):
+    def permutation_importances_bytree(self, X_train, y_train):
+        """Permutation Importance by tree
+
+        For a given feature, averages the loss in accuracy when 
+        permuting that feature on each individual tree. Same 
+        as ranger importance = 'permutation', as far as I can
+        tell.
+
+        Parameters
+        ----------
+        X_train : np.array
+            [description]
+        y_train : np.array
+            [description]
+
+        Returns
+        -------
+        imp : np.array
+            array of feature importances
         """
+        imp = []
+        n_samples = len(X_train)
+        n_classes = len(np.unique(y_train))
+        for col in range(-1, X_train.shape[1]):
+            accs = []
+            if col >= 0:
+                save = X_train[:, col].copy()
+            for i, tree in enumerate(self.estimator.estimators_):
+                if col >= 0:
+                    X_train[:, col] = np.random.permutation(X_train[:, col])
+                unsampled_indices = self._get_unsampled_indices(tree, n_samples)
+                tree_preds = tree.predict(X_train[unsampled_indices, :])
+                curr_acc = (y_train[unsampled_indices] == tree_preds).mean()
+                if col >= 0:
+                    accs.append(baseline_accs[i] - curr_acc)
+                else:
+                    accs.append(curr_acc)
+            if self.scale_permutation_bytree:
+                m = np.mean(accs) / np.std(accs, ddof=1)
+            else:
+                m = np.mean(accs)
+            if col >= 0:
+                X_train[:, col] = save
+                imp.append(m)
+            else:
+                baseline_accs = list(accs)
+
+        return imp
+
+    def permutation_importances_oob(self, X_train, y_train):
+        """ Permutation Importance using OOB data
+
         Taken from rfpimp module to decouple dependency and modify
         <https://github.com/parrt/random-forest-importances>
         ---------------------------------------------------------------
-        Return array of importances from pre-fit rf; metric is function
-        that measures accuracy or R^2 or similar. This function
-        works for regressors and classifiers.
+        For each feature, calculates difference between baseline
+        oob accuracy and oob accuracy when that feature is permuted.        
+
+        Parameters
+        ----------
+        X_train : np.array
+            [description]
+        y_train : np.array
+            [description]
+
+        Returns
+        -------
+        imp : np.array
+            array of feature importances
         """
         baseline = self.oob_classifier_accuracy(X_train, y_train)
         imp = []
@@ -444,7 +524,6 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         code:
         https://github.com/scikit-learn/scikit-learn/blob/a24c8b46/sklearn/ensemble/forest.py#L425
         """
-
         n_samples = len(X)
         n_classes = len(np.unique(y))
         predictions = np.zeros((n_samples, n_classes))
@@ -470,18 +549,20 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         except Exception as e:
             raise ValueError('Please check your X and y variable. The provided'
                              'estimator cannot be fitted to your data.\n' + str(e))
-        if self.importance_type == 'auto':
+        if self.importance_type == 'gini':
             try:
                 imp = self.estimator.feature_importances_
             except Exception:
                 raise ValueError('Only methods with feature_importance_ attribute '
                                 'are currently supported in BorutaPy.')
-        elif self.importance_type == 'permutation':
-            imp = self.permutation_importances_raw(X, y)
+        elif self.importance_type == 'permutation_oob':
+            imp = self.permutation_importances_oob(X, y)
         elif self.importance_type == 'permutation_holdout':
             imp = permutation_importance(self.estimator, X_test, y_test, n_repeats=5, n_jobs=-1)['importances_mean']
+        elif self.importance_type == 'permutation_bytree':
+            imp = self.permutation_importances_bytree(X, y)
         else:
-            raise ValueError('importance_type should be "auto", "permutation", or "permutation_holdout"')
+            raise ValueError('importance_type should be "gini", "permutation_oob", "permutation_holdout", or "permutation_bytree"')
         return imp
 
     def _get_shuffle(self, seq):
