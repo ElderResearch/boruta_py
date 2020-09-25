@@ -12,11 +12,11 @@ from __future__ import print_function, division
 import numpy as np
 import scipy as sp
 from sklearn.utils import check_random_state, check_X_y
-from sklearn.base import TransformerMixin, BaseEstimator
+from sklearn.base import TransformerMixin, BaseEstimator, is_classifier, is_regressor
 from sklearn.model_selection import train_test_split
 from sklearn.inspection import permutation_importance
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble.forest import _get_n_samples_bootstrap, _generate_unsampled_indices
+from sklearn.metrics import accuracy_score, mean_squared_error
 import sklearn
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -211,8 +211,14 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         self.max_iter = max_iter
         self.random_state = random_state
         self.verbose = verbose
-        self.importance_type = importance_type,
+        self.importance_type = importance_type
         self.scale_permutation_bytree = scale_permutation_bytree
+        if is_classifier(self.estimator):
+            self.task = 'classification'
+        elif is_regressor(self.estimator):
+            self.task = 'regression'
+        else:
+            self.task = 'other'
 
     def fit(self, X, y):
         """
@@ -440,7 +446,7 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         n_samples = len(X_train)
         n_classes = len(np.unique(y_train))
         for col in range(-1, X_train.shape[1]):
-            accs = []
+            metrics = []
             if col >= 0:
                 save = X_train[:, col].copy()
             for i, tree in enumerate(self.estimator.estimators_):
@@ -448,22 +454,27 @@ class BorutaPy(BaseEstimator, TransformerMixin):
                     X_train[:, col] = np.random.permutation(X_train[:, col])
                 unsampled_indices = self._get_unsampled_indices(tree, n_samples)
                 tree_preds = tree.predict(X_train[unsampled_indices, :])
-                curr_acc = (y_train[unsampled_indices] == tree_preds).mean()
-                if col >= 0:
-                    accs.append(baseline_accs[i] - curr_acc)
+                if self.task == 'classification':
+                    curr_metric = (y_train[unsampled_indices] == tree_preds).mean()
+                elif self.task == 'regression':
+                    curr_metric = -1 * ((y_train[unsampled_indices] - tree_preds) ** 2).mean()
                 else:
-                    accs.append(curr_acc)
+                    raise ValueError(f'Permutation importance not supported for {self.estimator}')
+                if col >= 0:
+                    metrics.append(baseline_metrics[i] - curr_metric)
+                else:
+                    metrics.append(curr_metric)
             if self.scale_permutation_bytree:
-                m = np.mean(accs) / np.std(accs, ddof=1)
+                m = np.mean(metrics) / np.std(metrics, ddof=1)
             else:
-                m = np.mean(accs)
+                m = np.mean(metrics)
             if col >= 0:
                 X_train[:, col] = save
                 imp.append(m)
             else:
-                baseline_accs = list(accs)
+                baseline_metrics = list(metrics)
 
-        return imp
+        return np.array(imp)
 
     def permutation_importances_oob(self, X_train, y_train):
         """ Permutation Importance using OOB data
@@ -486,12 +497,18 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         imp : np.array
             array of feature importances
         """
-        baseline = self.oob_classifier_accuracy(X_train, y_train)
+        if self.task == 'classification':
+            oob_metric = self.oob_classifier
+        elif self.task == 'regression':
+            oob_metric = self.oob_regressor
+        else:
+            raise ValueError(f'Permutation importance not supported for {self.estimator}')
+        baseline = oob_metric(X_train, y_train)
         imp = []
         for col in range(X_train.shape[1]):
             save = X_train[:, col].copy()
             X_train[:, col] = np.random.permutation(X_train[:, col])
-            m = self.oob_classifier_accuracy(X_train, y_train)
+            m = oob_metric(X_train, y_train)
             X_train[:, col] = save
             drop_in_metric = baseline - m
             imp.append(drop_in_metric)
@@ -514,7 +531,7 @@ class BorutaPy(BaseEstimator, TransformerMixin):
             return _generate_unsampled_indices(tree.random_state, n_samples)
 
 
-    def oob_classifier_accuracy(self, X, y):
+    def oob_classifier(self, X, y):
         """
         Taken from rfpimp module to decouple dependency and modify
         <https://github.com/parrt/random-forest-importances>
@@ -536,6 +553,26 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         predicted_classes = [self.estimator.classes_[i] for i in predicted_class_indexes]
 
         oob_score = np.mean(y == predicted_classes)
+        return oob_score
+
+    def oob_regressor(self, X, y):
+        """
+        Compute out-of-bag (OOB) MSE for a scikit-learn random forest
+        regressor. We learned the guts of scikit's RF from the BSD licensed
+        code:
+        https://github.com/scikit-learn/scikit-learn/blob/a24c8b46/sklearn/ensemble/forest.py#L425
+        """
+        n_samples = len(X)
+        predictions = np.zeros(n_samples)
+        n_predictions = np.zeros(n_samples)
+        for tree in self.estimator.estimators_:
+            unsampled_indices = self._get_unsampled_indices(tree, n_samples)
+            tree_preds = tree.predict(X[unsampled_indices, :])
+            predictions[unsampled_indices] += tree_preds
+            n_predictions[unsampled_indices] += 1
+
+        predictions /= n_predictions
+        oob_score = -1 * ((y - predictions) ** 2).mean()
         return oob_score
 
 
